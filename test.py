@@ -10,7 +10,7 @@ RED = (255, 0, 0)
 GREEN = (0, 255, 0)
 BLUE = (0, 0, 255)
 
-partitions = 6
+partitions = 20
 
 
 def get_coord(maincoord, screen_height, screen_width):
@@ -35,6 +35,7 @@ class Boid(pygame.sprite.Sprite):
         self.vy = 0
         self.screen_height = screen_height
         self.screen_width = screen_width
+        self.speedThreshold = 300
 
     def rotate(self, angle):
         angle = angle % 360
@@ -44,14 +45,25 @@ class Boid(pygame.sprite.Sprite):
         self.angle = (self.angle + dthet) % 360
         self.image = pygame.transform.rotate(self.image_og, self.angle)
 
-    def move(self, dx, dy):
+    def move(self):
+        dx = 0.0333 * self.vx
+        dy = 0.0333 * self.vy
         newx = (self.pos[0] + dx) % self.screen_width
         newy = (self.pos[1] + dy) % self.screen_height
         self.pos = (newx, newy)
 
-    def setvs(self, varr):
-        self.vx = varr[0]
-        self.vy = varr[1]
+    def setaccs(self, acarr):
+        if acarr[0] != 0 or acarr[1] != 0:
+            acarr = acarr/np.linalg.norm(acarr)
+        self.vx += 0.0333 * acarr[0]
+        self.vy += 0.0333 * acarr[1]
+        totalSpeed = np.linalg.norm(np.array([self.vx,self.vy]))
+
+        if (totalSpeed > self.speedThreshold):
+            self.vx = self.vx / totalSpeed * self.speedThreshold
+            self.vy = self.vy/totalSpeed * self.speedThreshold
+
+
 
     def update(self):
         self.rect = self.image.get_rect()
@@ -70,15 +82,12 @@ class Simulation:
         self.board = [0] * partitions
         for i in range(0, partitions):
             self.board[i] = [0] * partitions
-        self.xxx = 0
-        self.yyy = 0
 
     def addBoid(self, boid):
         self.boids.append(boid)
 
     def draw(self, screen):
         self.boidGroup.draw(screen)
-        pygame.draw.line(screen, BLACK, (0, 0), (self.xxx,self.yyy), 3)
 
 
     def getposdiff(self, pos1,pos2):
@@ -118,40 +127,51 @@ class Simulation:
             self.board[bpos[0]][bpos[1]].append(i)
 
         #array of shared space boids
-        print("\n\nnew step")
+        #print("\n\nnew step")
 
         for x in range (0, len(self.boids)):
-            cohesion = []
-            alignment = []
-            seperation = []
+            cohesion = np.array([0,0])
+            alignment = np.array([0,0])
+            seperation = np.array([0,0])
             sharedw = []
             cordboid = get_coord(self.boids[x].pos, self.screen_height, self.screen_width)
             for i in range (-1,2):
                  for j in range (-1,2):
                     sharedw += self.board[(cordboid[0]+i) % partitions][(cordboid[1] + j) % partitions]
 
-            avg_distance = np.array([0,0])
+
             total = 0
             for i in range(0, len(sharedw)):
                 #distance to boid
                 if (x != sharedw[i]):
                     posdif = self.getposdiff(self.boids[x].pos,self.boids[sharedw[i]].pos)
-                    avg_distance[0] += posdif[0]
-                    avg_distance[1] += posdif[1]
-                    total += 1
                     lentob = np.linalg.norm(posdif)
+                    distanceThresh = self.screen_width/partitions*1.5
+                    if (lentob <= distanceThresh):
+                        cohesion[0] += posdif[0]
+                        cohesion[1] += posdif[1]
+                        seperation[0] += (distanceThresh - lentob) * -posdif[0] * 0.5
+                        seperation[1] += (distanceThresh - lentob) * -posdif[1] * 0.5
+                        alignment[0] += self.boids[sharedw[i]].vx
+                        alignment[1] += self.boids[sharedw[i]].vy
 
-                    print("Boid ",x, " and ", sharedw[i], " is ", lentob, " Y ", posdif)
+
+
+                        total += 1
+
+
+                        #print("Boid ",x, " and ", sharedw[i], " is ", lentob, " Y ", posdif)
             if total > 0:
-                avg_distance = avg_distance / total
-                print("avg ",avg_distance)
-                self.xxx = self.boids[x].pos[0] + avg_distance[0]
-                self.yyy = self.boids[x].pos[1] + avg_distance[1]
-                print("Ok ", self.xxx, self.yyy)
+                cohesion = cohesion / total
+                seperation = seperation / total
+                alignment = alignment / total
+                #print("avg ",cohesion)
+                self.boids[x].setaccs((cohesion + seperation + alignment)/3)
+                #print("Ok ", self.xxx, self.yyy)
 
         for i in range(0,len(self.boids)):
             self.boids[i].rotateBy(5)
-            self.boids[i].move(np.random.uniform(-3, 5), np.random.uniform(-3, 5))
+            self.boids[i].move()
 
         self.boidGroup.update()
 
@@ -172,15 +192,15 @@ def main():
     win_height = 640
     screen = pygame.display.set_mode((win_width, win_height))
     pygame.display.set_caption('2D projectile motion')
-    numofboids = 3
+    numofboids = 35
 
     boids = []
 
     ang = np.random.uniform(0, 360)
-    boids.append(Boid(0, 0, ang, win_height, win_width, 'x3.png'))
+    boids.append(Boid(np.random.uniform(0, 360), np.random.uniform(0, 360), ang, win_height, win_width, 'x3.png'))
     for i in range(1, numofboids):
         ang = np.random.uniform(0, 360)
-        boids.append(Boid(i * 45, i * 45, ang, win_height, win_width, 'x2.png'))
+        boids.append(Boid(np.random.uniform(0, 360), np.random.uniform(0, 360), ang, win_height, win_width, 'x2.png'))
     sim = Simulation(boids, win_height, win_width)
     #mygroup = pygame.sprite.Group(boids)
 
