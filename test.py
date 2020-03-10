@@ -21,6 +21,26 @@ def get_coord(maincoord, screen_height, screen_width):
 def vecangle(vec1, vec2):
     return np.arccos(np.dot(vec1, vec2)/(np.linalg.norm(vec1)*np.linalg.norm(vec2)))*180/np.pi
 
+'''
+class Circle(pygame.sprite.Sprite):
+    def __init__(self, x, y, radius):
+        pygame.sprite.Sprite.__init__(self)
+        self.image = pygame.Surface([radius*2, radius*2])
+        self.image.fill(WHITE)
+        self.rect = self.image.get_rect()
+        cx = self.rect.centerx
+        cy = self.rect.centery
+        pygame.draw.circle(self.image, BLUE, (x, y), x, y)
+        self.rect = self.image.get_rect()
+        self.pos = [x,y]
+'''
+
+class Circle():
+    def __init__(self, x, y, r):
+        self.x = x
+        self.y = y
+        self.r = r
+
 class Boid(pygame.sprite.Sprite):
     def __init__(self, x, y, angle, screen_height, screen_width, imgfile):
         pygame.sprite.Sprite.__init__(self)
@@ -93,7 +113,8 @@ class Boid(pygame.sprite.Sprite):
             dirunit = dirarr / dirmag
             self.midx = curdir[0] + self.pos[0]
             self.midy = curdir[1] + self.pos[1]
-            curdir += dirarr / 2
+            #curdir += dirarr / 2
+            curdir += dirunit * 75
             self.dirx = curdir[0]
             self.diry = curdir[1]
             self.drawx = curdir[0] + self.pos[0]
@@ -120,15 +141,18 @@ class Simulation:
         self.board = [0] * partitions
         for i in range(0, partitions):
             self.board[i] = [0] * partitions
+        self.circ =  Circle(320,320,50)
+        self.circles = [self.circ]
 
     def addBoid(self, boid):
         self.boids.append(boid)
 
     def draw(self, screen):
         self.boidGroup.draw(screen)
+        pygame.draw.circle(screen, BLUE, (self.circles[0].x, self.circles[0].y), self.circles[0].r)
         pygame.draw.line(screen, BLACK, (self.boids[0].pos[0],self.boids[0].pos[1]), (self.boids[0].midx,self.boids[0].midy), 3)
         pygame.draw.line(screen, BLACK, (self.boids[0].midx,self.boids[0].midy),(self.boids[0].drawx, self.boids[0].drawy), 3)
-        print("X ",self.boids[0].dirx, " Y ",self.boids[0].diry)
+        #print("X ",self.boids[0].dirx, " Y ",self.boids[0].diry)
 
 
     def getposdiff(self, pos1,pos2):
@@ -174,14 +198,23 @@ class Simulation:
             cohesion = np.array([0,0])
             alignment = np.array([0,0])
             seperation = np.array([0,0])
+            totalDir = np.array([0,0])
+            circleseperation = np.array([0,0])
             sharedw = []
             cordboid = get_coord(self.boids[x].pos, self.screen_height, self.screen_width)
+            '''
             for i in range (-1,2):
                  for j in range (-1,2):
                     sharedw += self.board[(cordboid[0]+i) % partitions][(cordboid[1] + j) % partitions]
+            '''
+            for i in range (-1,2):
+                 for j in range (-1,2):
+                    if ((cordboid[0]+i) >= 0 and (cordboid[1] + j) >= 0 and (cordboid[0]+i) < partitions and (cordboid[1] + j) < partitions):
+                        sharedw += self.board[(cordboid[0]+i) % partitions][(cordboid[1] + j) % partitions]
 
 
             total = 0
+            totalcirc = 0
             for i in range(0, len(sharedw)):
                 #distance to boid
                 if (x != sharedw[i]):
@@ -202,14 +235,26 @@ class Simulation:
 
 
                         #print("Boid ",x, " and ", sharedw[i], " is ", lentob, " Y ", posdif)
+            for circ in self.circles:
+                distanceThresh = self.screen_width / partitions * 1.5
+                diff = self.getposdiff(self.boids[x].pos, np.array([circ.x,circ.y]))
+                dist = np.linalg.norm(diff)
+                circleseperation[0] += max((circ.r*2 - dist), 0) * -diff[0]
+                circleseperation[1] += max((circ.r*2 - dist), 0) * -diff[1]
+                totalcirc += 1.0
+            if totalcirc > 0:
+                circleseperation = circleseperation / totalcirc
+                totalDir = totalDir + circleseperation
+
             if total > 0:
                 cohesion = cohesion / total
                 seperation = seperation / total
                 alignment = alignment / total
                 #print("avg ",cohesion)
                 #Pass variables into
-                self.boids[x].setdir(cohesion * 4 + seperation / 3 + alignment)
+                totalDir += cohesion * 3 + seperation / 3 + alignment
                 #self.boids[x].setdir(cohesion)
+            self.boids[x].setdir(totalDir)
 
         for i in range(0,len(self.boids)):
             self.boids[i].rotateBy(5)
