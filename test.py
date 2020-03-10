@@ -10,7 +10,7 @@ RED = (255, 0, 0)
 GREEN = (0, 255, 0)
 BLUE = (0, 0, 255)
 
-partitions = 20
+partitions = 10
 
 
 def get_coord(maincoord, screen_height, screen_width):
@@ -18,24 +18,33 @@ def get_coord(maincoord, screen_height, screen_width):
     mody = screen_height/partitions
     return (math.floor(maincoord[0]/modx),math.floor(maincoord[1]/mody))
 
+def vecangle(vec1, vec2):
+    return np.arccos(np.dot(vec1, vec2)/(np.linalg.norm(vec1)*np.linalg.norm(vec2)))*180/np.pi
 
 class Boid(pygame.sprite.Sprite):
     def __init__(self, x, y, angle, screen_height, screen_width, imgfile):
         pygame.sprite.Sprite.__init__(self)
 
         self.image_og = pygame.image.load(imgfile)
-        self.image_og = pygame.transform.scale(self.image_og, (30, 50))
+        self.image_og = pygame.transform.scale(self.image_og, (15, 25))
         self.image = self.image_og
         self.rect = self.image_og.get_rect()
         self.pos = (x,y)
         self.rect.centerx = self.pos[0]
         self.rect.centery = self.pos[1]
         self.angle = angle
-        self.vx = 0
-        self.vy = 0
+        self.vx = -1
+        self.vy = -1
+        self.dirx = 0
+        self.diry = 0
+        self.midx = 0
+        self.midy = 0
+        self.temp = np.array([0,0])
+        self.drawx = 0
+        self.drawy = 0
         self.screen_height = screen_height
         self.screen_width = screen_width
-        self.speedThreshold = 300
+        self.speedThreshold = 150
 
     def rotate(self, angle):
         angle = angle % 360
@@ -45,23 +54,52 @@ class Boid(pygame.sprite.Sprite):
         self.angle = (self.angle + dthet) % 360
         self.image = pygame.transform.rotate(self.image_og, self.angle)
 
+
+    def velLimit(self):
+        if self.vx != 0 or self.vx != 0:
+            totalSpeed = np.linalg.norm(np.array([self.vx, self.vy]))
+            if (totalSpeed > self.speedThreshold):
+                self.vx = self.vx / totalSpeed * self.speedThreshold
+                self.vy = self.vy / totalSpeed * self.speedThreshold
+
+
     def move(self):
+        accelX = self.dirx * 12
+        accelY = self.diry * 12
+        self.vx += 0.0333 * accelX
+        self.vy += 0.0333 * accelY
+        self.velLimit()
         dx = 0.0333 * self.vx
         dy = 0.0333 * self.vy
+        self.rotate(np.arctan2(self.vx,self.vy)*180/np.pi + 180)
         newx = (self.pos[0] + dx) % self.screen_width
         newy = (self.pos[1] + dy) % self.screen_height
         self.pos = (newx, newy)
 
-    def setaccs(self, acarr):
+    def setdir(self, dirarr):
+        '''
         if acarr[0] != 0 or acarr[1] != 0:
             acarr = acarr/np.linalg.norm(acarr)
-        self.vx += 0.0333 * acarr[0]
-        self.vy += 0.0333 * acarr[1]
-        totalSpeed = np.linalg.norm(np.array([self.vx,self.vy]))
+        '''
+        #self.dirx = self.pos[0]
+        #self.diry = self.pos[1]
+        curdir = np.array([0,0])
+        if self.vx != 0 or self.vx != 0:
+            totalSpeed = np.linalg.norm(np.array([self.vx, self.vy]))
+            curdir = np.array([self.vx/totalSpeed, self.vy/totalSpeed])
+            curdir = curdir * totalSpeed * 0.5
+        if dirarr[0] != 0 or dirarr[1] != 0:
+            dirmag = np.linalg.norm(dirarr)
+            dirunit = dirarr / dirmag
+            self.midx = curdir[0] + self.pos[0]
+            self.midy = curdir[1] + self.pos[1]
+            curdir += dirarr / 2
+            self.dirx = curdir[0]
+            self.diry = curdir[1]
+            self.drawx = curdir[0] + self.pos[0]
+            self.drawy = curdir[1] + self.pos[1]
 
-        if (totalSpeed > self.speedThreshold):
-            self.vx = self.vx / totalSpeed * self.speedThreshold
-            self.vy = self.vy/totalSpeed * self.speedThreshold
+
 
 
 
@@ -88,6 +126,9 @@ class Simulation:
 
     def draw(self, screen):
         self.boidGroup.draw(screen)
+        pygame.draw.line(screen, BLACK, (self.boids[0].pos[0],self.boids[0].pos[1]), (self.boids[0].midx,self.boids[0].midy), 3)
+        pygame.draw.line(screen, BLACK, (self.boids[0].midx,self.boids[0].midy),(self.boids[0].drawx, self.boids[0].drawy), 3)
+        print("X ",self.boids[0].dirx, " Y ",self.boids[0].diry)
 
 
     def getposdiff(self, pos1,pos2):
@@ -150,8 +191,8 @@ class Simulation:
                     if (lentob <= distanceThresh):
                         cohesion[0] += posdif[0]
                         cohesion[1] += posdif[1]
-                        seperation[0] += (distanceThresh - lentob) * -posdif[0] * 0.5
-                        seperation[1] += (distanceThresh - lentob) * -posdif[1] * 0.5
+                        seperation[0] += (distanceThresh - lentob) * -posdif[0]
+                        seperation[1] += (distanceThresh - lentob) * -posdif[1]
                         alignment[0] += self.boids[sharedw[i]].vx
                         alignment[1] += self.boids[sharedw[i]].vy
 
@@ -166,8 +207,9 @@ class Simulation:
                 seperation = seperation / total
                 alignment = alignment / total
                 #print("avg ",cohesion)
-                self.boids[x].setaccs((cohesion + seperation + alignment)/3)
-                #print("Ok ", self.xxx, self.yyy)
+                #Pass variables into
+                self.boids[x].setdir(cohesion * 4 + seperation / 3 + alignment)
+                #self.boids[x].setdir(cohesion)
 
         for i in range(0,len(self.boids)):
             self.boids[i].rotateBy(5)
@@ -192,7 +234,7 @@ def main():
     win_height = 640
     screen = pygame.display.set_mode((win_width, win_height))
     pygame.display.set_caption('2D projectile motion')
-    numofboids = 35
+    numofboids = 55
 
     boids = []
 
@@ -200,7 +242,7 @@ def main():
     boids.append(Boid(np.random.uniform(0, 360), np.random.uniform(0, 360), ang, win_height, win_width, 'x3.png'))
     for i in range(1, numofboids):
         ang = np.random.uniform(0, 360)
-        boids.append(Boid(np.random.uniform(0, 360), np.random.uniform(0, 360), ang, win_height, win_width, 'x2.png'))
+        boids.append(Boid(np.random.uniform(200, 500), np.random.uniform(200, 500), ang, win_height, win_width, 'x2.png'))
     sim = Simulation(boids, win_height, win_width)
     #mygroup = pygame.sprite.Group(boids)
 
