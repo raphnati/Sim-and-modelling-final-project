@@ -10,7 +10,7 @@ RED = (255, 0, 0)
 GREEN = (0, 255, 0)
 BLUE = (0, 0, 255)
 
-partitions = 10
+partitions = 15
 
 
 def get_coord(maincoord, screen_height, screen_width):
@@ -113,8 +113,8 @@ class Boid(pygame.sprite.Sprite):
             dirunit = dirarr / dirmag
             self.midx = curdir[0] + self.pos[0]
             self.midy = curdir[1] + self.pos[1]
-            #curdir += dirarr / 2
-            curdir += dirunit * 75
+            curdir += dirarr / 2
+            #curdir += dirunit * 75
             self.dirx = curdir[0]
             self.diry = curdir[1]
             self.drawx = curdir[0] + self.pos[0]
@@ -209,8 +209,8 @@ class Simulation:
             '''
             for i in range (-1,2):
                  for j in range (-1,2):
-                    if ((cordboid[0]+i) >= 0 and (cordboid[1] + j) >= 0 and (cordboid[0]+i) < partitions and (cordboid[1] + j) < partitions):
-                        sharedw += self.board[(cordboid[0]+i) % partitions][(cordboid[1] + j) % partitions]
+                    #if ((cordboid[0]+i) >= 0 and (cordboid[1] + j) >= 0 and (cordboid[0]+i) < partitions and (cordboid[1] + j) < partitions):
+                    sharedw += self.board[(cordboid[0]+i) % partitions][(cordboid[1] + j) % partitions]
 
 
             total = 0
@@ -224,8 +224,8 @@ class Simulation:
                     if (lentob <= distanceThresh):
                         cohesion[0] += posdif[0]
                         cohesion[1] += posdif[1]
-                        seperation[0] += (distanceThresh - lentob) * -posdif[0]
-                        seperation[1] += (distanceThresh - lentob) * -posdif[1]
+                        seperation[0] += max((distanceThresh*0.9 - lentob),0) * -posdif[0]
+                        seperation[1] += max((distanceThresh*0.9 - lentob),0) * -posdif[1]
                         alignment[0] += self.boids[sharedw[i]].vx
                         alignment[1] += self.boids[sharedw[i]].vy
 
@@ -239,8 +239,8 @@ class Simulation:
                 distanceThresh = self.screen_width / partitions * 1.5
                 diff = self.getposdiff(self.boids[x].pos, np.array([circ.x,circ.y]))
                 dist = np.linalg.norm(diff)
-                circleseperation[0] += max((circ.r*2 - dist), 0) * -diff[0]
-                circleseperation[1] += max((circ.r*2 - dist), 0) * -diff[1]
+                circleseperation[0] += (max((circ.r*2 - dist), 0))/2**2 * -diff[0]
+                circleseperation[1] += (max((circ.r*2 - dist), 0))/2**2 * -diff[1]
                 totalcirc += 1.0
             if totalcirc > 0:
                 circleseperation = circleseperation / totalcirc
@@ -252,7 +252,7 @@ class Simulation:
                 alignment = alignment / total
                 #print("avg ",cohesion)
                 #Pass variables into
-                totalDir += cohesion * 3 + seperation / 3 + alignment
+                totalDir += cohesion * 3 + seperation / 2 + alignment
                 #self.boids[x].setdir(cohesion)
             self.boids[x].setdir(totalDir)
 
