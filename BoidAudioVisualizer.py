@@ -1,3 +1,10 @@
+#audio stuff
+import pyaudio, wave
+from scipy.fftpack import fft
+
+
+
+
 import pygame, sys
 import matplotlib.pyplot as plt
 import numpy as np
@@ -10,8 +17,79 @@ RED = (255, 0, 0)
 GREEN = (0, 255, 0)
 BLUE = (0, 0, 255)
 
-partitions = 15
+#number of partitions
+partitions = 17
 
+
+
+
+
+#audio stuff
+
+CHUNK = 1024*4 #lower chunk size = more samples per frame, increases refresh rate
+FORMAT = pyaudio.paInt16 #bytes per sample (audio format)
+CHANNELS = 1
+
+RATE = 44100
+
+audio_path = "test.wav"
+wf = wave.open(audio_path, 'rb')
+
+# create an audio object
+p = pyaudio.PyAudio()
+
+
+stream=p.open(format=p.get_format_from_width(wf.getsampwidth()),
+              channels=wf.getnchannels(), rate=wf.getframerate(), input=True,
+             output=True, frames_per_buffer=1024)
+
+files_seconds = wf.getnframes()/RATE #length of wav file
+files_seconds
+
+def y_range(filename):
+    wf = wave.open(filename, 'rb')
+    x = []
+    count = 0
+    while count <= (int(wf.getnframes() / CHUNK)):
+        data = wf.readframes(CHUNK)  # read 1 chunk
+        data_int = np.frombuffer(data, dtype=np.int16)
+        x.append(data_int)
+        count = count + 1
+
+    result = []
+    for list in x:
+        result.append(min(list))
+        result.append(max(list))
+
+    y_max = np.amax(result)
+    y_min = np.amin(result)
+    return y_max, y_min
+
+'''
+used from vivian chen's audio visualizer code
+https://github.com/vivianschen/Audio_Visualizer
+'''
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#boid stuff
 
 def get_coord(maincoord, screen_height, screen_width):
     modx = screen_width/partitions
@@ -21,28 +99,29 @@ def get_coord(maincoord, screen_height, screen_width):
 def vecangle(vec1, vec2):
     return np.arccos(np.dot(vec1, vec2)/(np.linalg.norm(vec1)*np.linalg.norm(vec2)))*180/np.pi
 
-'''
-class Circle(pygame.sprite.Sprite):
-    def __init__(self, x, y, radius):
-        pygame.sprite.Sprite.__init__(self)
-        self.image = pygame.Surface([radius*2, radius*2])
-        self.image.fill(WHITE)
-        self.rect = self.image.get_rect()
-        cx = self.rect.centerx
-        cy = self.rect.centery
-        pygame.draw.circle(self.image, BLUE, (x, y), x, y)
-        self.rect = self.image.get_rect()
-        self.pos = [x,y]
-'''
+
+
+
 
 class Circle():
-    def __init__(self, x, y, r):
+    def __init__(self, x, y, r,col, win_width, win_height):
         self.x = x
         self.y = y
         self.r = r
+        self.regr = r
+        self.win_width = win_width
+        self. win_height = win_height
+        self.col = col
+    def update(self, levelRadius):
+        self.r = self.regr + levelRadius
+
+
+
+
+
 
 class Boid(pygame.sprite.Sprite):
-    def __init__(self, x, y, angle, screen_height, screen_width, imgfile):
+    def __init__(self, x, y, angle, screen_height, screen_width, imgfile,freqlev):
         pygame.sprite.Sprite.__init__(self)
 
         self.image_og = pygame.image.load(imgfile)
@@ -53,10 +132,13 @@ class Boid(pygame.sprite.Sprite):
         self.rect.centerx = self.pos[0]
         self.rect.centery = self.pos[1]
         self.angle = angle
+        #initial velocity
         self.vx = -1
         self.vy = -1
+        #initial steering direction
         self.dirx = 0
         self.diry = 0
+        #steering direction offset related to current velocity
         self.midx = 0
         self.midy = 0
         self.temp = np.array([0,0])
@@ -65,16 +147,20 @@ class Boid(pygame.sprite.Sprite):
         self.screen_height = screen_height
         self.screen_width = screen_width
         self.speedThreshold = 150
+        self.initSpeedThreshold = 150
+        self.freqlev = freqlev
 
+    #rotates to an angle
     def rotate(self, angle):
         angle = angle % 360
         self.image = pygame.transform.rotate(self.image_og, angle)
 
+    #rotates by an angle
     def rotateBy(self, dthet):
         self.angle = (self.angle + dthet) % 360
         self.image = pygame.transform.rotate(self.image_og, self.angle)
 
-
+    #call max velocity limit
     def velLimit(self):
         if self.vx != 0 or self.vx != 0:
             totalSpeed = np.linalg.norm(np.array([self.vx, self.vy]))
@@ -82,7 +168,7 @@ class Boid(pygame.sprite.Sprite):
                 self.vx = self.vx / totalSpeed * self.speedThreshold
                 self.vy = self.vy / totalSpeed * self.speedThreshold
 
-
+    #move by step
     def move(self):
         accelX = self.dirx * 12
         accelY = self.diry * 12
@@ -96,11 +182,9 @@ class Boid(pygame.sprite.Sprite):
         newy = (self.pos[1] + dy) % self.screen_height
         self.pos = (newx, newy)
 
-    def setdir(self, dirarr):
-        '''
-        if acarr[0] != 0 or acarr[1] != 0:
-            acarr = acarr/np.linalg.norm(acarr)
-        '''
+
+    def setdir(self, dirarr, addto):
+        self.speedThreshold = self.initSpeedThreshold + addto**1.7
         #self.dirx = self.pos[0]
         #self.diry = self.pos[1]
         curdir = np.array([0,0])
@@ -113,8 +197,14 @@ class Boid(pygame.sprite.Sprite):
             dirunit = dirarr / dirmag
             self.midx = curdir[0] + self.pos[0]
             self.midy = curdir[1] + self.pos[1]
-            curdir += dirarr / 2
-            #curdir += dirunit * 75
+
+            #non limited
+            #curdir += dirarr / 2
+
+            #limited
+            curdir += dirunit * self.speedThreshold * 0.5
+
+
             self.dirx = curdir[0]
             self.diry = curdir[1]
             self.drawx = curdir[0] + self.pos[0]
@@ -141,17 +231,22 @@ class Simulation:
         self.board = [0] * partitions
         for i in range(0, partitions):
             self.board[i] = [0] * partitions
-        self.circ =  Circle(320,320,50)
-        self.circles = [self.circ]
+        self.circ1 =  Circle(100,160,5, GREEN, self.screen_width, self.screen_height)
+        self.circ2 = Circle(380, 160, 5, RED, self.screen_width, self.screen_height)
+        self.circ3 = Circle(320, 480, 5, BLUE, self.screen_width, self.screen_height)
+        self.circ4 = Circle(530, 480, 5, BLACK, self.screen_width, self.screen_height)
+        self.circles = [self.circ1,self.circ2,self.circ3,self.circ4]
 
     def addBoid(self, boid):
         self.boids.append(boid)
 
     def draw(self, screen):
         self.boidGroup.draw(screen)
-        pygame.draw.circle(screen, BLUE, (self.circles[0].x, self.circles[0].y), self.circles[0].r)
-        pygame.draw.line(screen, BLACK, (self.boids[0].pos[0],self.boids[0].pos[1]), (self.boids[0].midx,self.boids[0].midy), 3)
-        pygame.draw.line(screen, BLACK, (self.boids[0].midx,self.boids[0].midy),(self.boids[0].drawx, self.boids[0].drawy), 3)
+        for i in range(0, 4):
+            pygame.draw.circle(screen, self.circles[i].col, (self.circles[i].x, self.circles[i].y), self.circles[i].r)
+
+        #pygame.draw.line(screen, BLACK, (self.boids[0].pos[0],self.boids[0].pos[1]), (self.boids[0].midx,self.boids[0].midy), 3)
+        #pygame.draw.line(screen, BLACK, (self.boids[0].midx,self.boids[0].midy),(self.boids[0].drawx, self.boids[0].drawy), 3)
         #print("X ",self.boids[0].dirx, " Y ",self.boids[0].diry)
 
 
@@ -173,7 +268,7 @@ class Simulation:
                 pos1np[0] -= self.screen_width
         # check if object is on other side of board wrap around
         if (3 / partitions * self.screen_height <= dy):
-            # subtract from x value to move into correct measuring distance
+            # subtract from y value to move into correct measuring distance
             if pos2np[1] > pos1np[1]:
                 pos2np[1] -= self.screen_height
             else:
@@ -182,7 +277,8 @@ class Simulation:
         diff = pos2np - pos1np
         return diff
 
-    def update(self):
+
+    def update(self, levels):
         cordboid = (0,0)
         for i in range (0, partitions):
             for j in range (0,partitions):
@@ -215,6 +311,8 @@ class Simulation:
 
             total = 0
             totalcirc = 0
+
+            #for other boids in list
             for i in range(0, len(sharedw)):
                 #distance to boid
                 if (x != sharedw[i]):
@@ -229,65 +327,73 @@ class Simulation:
                         alignment[0] += self.boids[sharedw[i]].vx
                         alignment[1] += self.boids[sharedw[i]].vy
 
-
-
                         total += 1
-
-
                         #print("Boid ",x, " and ", sharedw[i], " is ", lentob, " Y ", posdif)
+
+
+            #for circle
             for circ in self.circles:
                 distanceThresh = self.screen_width / partitions * 1.5
                 diff = self.getposdiff(self.boids[x].pos, np.array([circ.x,circ.y]))
                 dist = np.linalg.norm(diff)
-                circleseperation[0] += (max((circ.r*2 - dist), 0))/2**2 * -diff[0]
-                circleseperation[1] += (max((circ.r*2 - dist), 0))/2**2 * -diff[1]
+                circleseperation[0] += (max((circ.r*2 - dist), 0))**1.5 * -diff[0]
+                circleseperation[1] += (max((circ.r*2 - dist), 0))**1.5 * -diff[1]
                 totalcirc += 1.0
+            #if multiple circles
             if totalcirc > 0:
-                circleseperation = circleseperation / totalcirc
+                circleseperation = circleseperation / 1
                 totalDir = totalDir + circleseperation
 
+            #
             if total > 0:
                 cohesion = cohesion / total
                 seperation = seperation / total
                 alignment = alignment / total
                 #print("avg ",cohesion)
                 #Pass variables into
+
+                #weighted vectors
                 totalDir += cohesion * 3 + seperation / 2 + alignment
                 #self.boids[x].setdir(cohesion)
-            self.boids[x].setdir(totalDir)
+            self.boids[x].setdir(totalDir,levels[self.boids[x].freqlev])
 
         for i in range(0,len(self.boids)):
             self.boids[i].rotateBy(5)
             self.boids[i].move()
 
         self.boidGroup.update()
+        for i in range (0,4):
+                self.circles[i].update(levels[i])
 
 
 
 def main():
 
    # initializing pygame
-    #pygame.mixer.init()
     pygame.init()
     clock = pygame.time.Clock()
 
-    # some music
-    #pygame.mixer.music.load('madame-butterfly.wav')
 
     # top left corner is (0,0)
     win_width = 640
     win_height = 640
     screen = pygame.display.set_mode((win_width, win_height))
     pygame.display.set_caption('2D projectile motion')
-    numofboids = 55
-
+    numofboids = 100
+    voladjust = 0.5
     boids = []
 
     ang = np.random.uniform(0, 360)
-    boids.append(Boid(np.random.uniform(0, 360), np.random.uniform(0, 360), ang, win_height, win_width, 'x3.png'))
-    for i in range(1, numofboids):
+    boids.append(Boid(np.random.uniform(0, 360), np.random.uniform(0, 360), ang, win_height, win_width, 'x4.png',3))
+    for i in range(1, int(numofboids/4)):
         ang = np.random.uniform(0, 360)
-        boids.append(Boid(np.random.uniform(200, 500), np.random.uniform(200, 500), ang, win_height, win_width, 'x2.png'))
+        boids.append(Boid(np.random.uniform(200, 500), np.random.uniform(200, 500), ang, win_height, win_width, 'x2.png',0))
+        ang = np.random.uniform(0, 360)
+        boids.append(Boid(np.random.uniform(200, 500), np.random.uniform(200, 500), ang, win_height, win_width, 'x3.png', 1))
+        ang = np.random.uniform(0, 360)
+        boids.append(Boid(np.random.uniform(200, 500), np.random.uniform(200, 500), ang, win_height, win_width, 'x5.png', 2))
+        ang = np.random.uniform(0, 360)
+        boids.append(Boid(np.random.uniform(200, 500), np.random.uniform(200, 500), ang, win_height, win_width, 'x6.png', 3))
     sim = Simulation(boids, win_height, win_width)
     #mygroup = pygame.sprite.Group(boids)
 
@@ -316,17 +422,32 @@ def main():
             screen.fill(WHITE)
 
 
-            #print(pygame.mouse.get_pos())
-
+            '''
             for i in range (1, partitions):
                 pygame.draw.line(screen, BLACK, (win_width/partitions * i, 0), (win_width/partitions * i, win_height), 3)
                 pygame.draw.line(screen, BLACK, (0, win_height / partitions * i), (win_width, win_height / partitions * i),3)
+            '''
 
 
-            sim.update()
+            #audio stuff
+            data = wf.readframes(CHUNK)  # read 1 chunk
+            data_int = np.fromstring(data, dtype=np.int16)
+            y_fft = fft(data_int)
+            # slice and rescale
+            h = np.abs(y_fft[0:CHUNK]) * 2 / (10000 * CHUNK)
+            h1sum = np.sum(h[0:400])
+            h2sum = np.sum(h[400:800])
+            h3sum = np.sum(h[800:1200])
+            h4sum = np.sum(h[1200:4096])
+            stream.write(data)
+
+
+
+
+
+            sim.update([h1sum*3*voladjust, h2sum* 4*voladjust,h3sum * 6*voladjust,h4sum*4*voladjust])
             sim.draw(screen)
 
-            #print(box.rect.center)
             pygame.display.flip()
             pygame.display.update()
 
